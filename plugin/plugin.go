@@ -1,22 +1,8 @@
-// Copyright 2019 The casbin Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package plugin
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"log"
 	"net/url"
 	"strings"
@@ -46,8 +32,7 @@ func NewPlugin(casbinModel string, casbinPolicy string) (*CasbinAuthZPlugin, err
 	return plugin, err
 }
 
-func checkDatabaseAndMakeMapa() error {
-	log.Println("INside checkDatabaseAndMakeMapa")
+func CheckDatabaseAndMakeMapa() error {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -55,38 +40,50 @@ func checkDatabaseAndMakeMapa() error {
 	}
 	defer cli.Close()
 
-	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{})
+	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
 	if err != nil {
 		return err
 	}
-	log.Println("[Containers]:", containers)
 
+	// Create map for a quick check of uniqueness
+	isItIdExist := make(map[string]bool)
 	for _, container := range containers {
-		// Does Not exist another way? What about time?
-		for d := range nameAndIdMapping {
-			delete(nameAndIdMapping, d)
-		}
-		log.Println(container.ID)
-		log.Println(container.Names[0])
-		// took only 12 symbols
 		ID := container.ID[:12]
-		// docker daemon usually retuen /<nameOfContainer>
+		// docker daemon usually return /<nameOfContainer>
 		name := container.Names[0]
 		hasSlash := strings.Contains(name, "/")
 		if hasSlash {
 			name = strings.TrimLeft(name, "/")
 		}
-		nameAndIdMapping[ID] = name
-	}
 
-	for containerID := range database {
-		_, found := nameAndIdMapping[containerID]
-		if found {
-			continue
-		} else {
-			delete(database, containerID)
+		isItIdExist[ID] = true
+		if _, exists := nameAndIdMapping[ID]; !exists {
+			nameAndIdMapping[ID] = name
 		}
 	}
+
+	// Create temporary map for key storage we need tp delete
+	keysToDelete := make(map[string]bool)
+	for key := range nameAndIdMapping {
+		if !isItIdExist[key] {
+			keysToDelete[key] = true
+		}
+	}
+
+	for oldId := range keysToDelete {
+		delete(nameAndIdMapping, oldId)
+
+		_, found := database[oldId]
+		if found {
+			delete(database, oldId)
+		}
+	}
+
+	//------------------------------------------
+	// DEBUG
+	log.Println("NameAndIdMapping:", nameAndIdMapping)
+	log.Println("database:", database)
+	//------------------------------------------
 	return nil
 }
 
@@ -99,82 +96,84 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	reqURI, _ := url.QueryUnescape(req.RequestURI)
 	reqURL, _ := url.ParseRequestURI(reqURI)
 
-	// if we'll get empty request to docker
+	// if we'll get empty request from docker
 	if reqURL == nil {
-		return authorization.Response{Allow: false, Msg: "Access denied by auth plugin. Emtpy request"}
+		return authorization.Response{Allow: true}
 	}
-
-	headersJSON, err := json.Marshal(req.RequestHeaders)
-	obj2 := reqURL.String()
-	reqBody, _ := url.QueryUnescape(string(req.RequestBody))
-	act2 := req.RequestMethod
-
-	var headers map[string]string
-	err = json.Unmarshal(headersJSON, &headers)
-	// does i need use panic?
-	if err != nil {
-		log.Println("Error marshling headers to JSON:", err)
-	}
-
-	log.Println("Headers:", headers)
-	log.Println("Method:", act2)
-	log.Println("Api:", obj2)
-	log.Println("Body:", reqBody)
-
-	key, found := headers["Authheader"]
-
-	if found {
-		log.Println("OK! I've found Authheader")
-		log.Println("key: ", key)
-	}
-
-	obj1 := reqURL.String()
-
-	//------------------------------------------
-	// DEBUG
-	if obj1 == "/v1.43/containers/create" {
-		reqBody, _ := url.QueryUnescape(string(req.RequestBody))
-		log.Println("[create container]:", reqBody)
-	}
-	//------------------------------------------
 
 	obj := reqURL.String()
 	act := req.RequestMethod
+	reqBody, _ := url.QueryUnescape(string(req.RequestBody))
+
+	//------------------------------------------
+	// DEBUG
+	log.Println("Headers:", req.RequestHeaders)
+	log.Println("Method:", act)
+	log.Println("Api:", obj)
+	log.Println("Body:", reqBody)
+	//------------------------------------------
+
+	// here we mush to allow /containers/json?all=1, otherwise we'll stuck at endless loop because of checkDatabaseAndMakeMapa
+	allowed, err := plugin.enforcer.Enforce(obj, act)
+	if err != nil {
+		log.Println(err)
+		return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Error"}
+	}
+
+	if allowed {
+		log.Println("obj:", obj, ", act:", act, "res: allowed")
+		return authorization.Response{Allow: true}
+	}
 
 	if strings.Contains(obj, "/v1.43/containers/") {
-
-		err := checkDatabaseAndMakeMapa()
-		if err != nil {
-			log.Println("Error occurred", err)
+		key, found := req.RequestHeaders["Authheader"]
+		if !found {
+			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Authheader is Empty. Follow instruction - example.com"}
 		}
 
-		parts := strings.Split(obj, "/")
-		containerID := parts[3]
+		err := CheckDatabaseAndMakeMapa()
+		if err != nil {
+			errorMsg := fmt.Sprintf("[CheckDatabaseAndMakeMapa] Error occurred: %e", err)
+			log.Println(errorMsg)
+		}
+
+		partsOfApi := strings.Split(obj, "/")
+		containerID := partsOfApi[3]
 		isitNameOfContainer := false
+		// is it a name of container
 		for id := range nameAndIdMapping {
 			if containerID == nameAndIdMapping[id] {
-				log.Println("Name of container:", nameAndIdMapping[id])
 				isitNameOfContainer = true
+				// redefining
 				containerID = id
 				break
 			}
 		}
-		// containerID , isitNameOfContainer = nameAndIdMapping[containerID]
+		// if user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
 		if len(containerID) != 64 && len(containerID) != 12 && !isitNameOfContainer {
-			return authorization.Response{Allow: true}
+			IsItShortId := false
+			if len(containerID) > 12 {
+				containerID = containerID[:12]
+			}
+			for ID, _ := range database {
+				if ID[:len(containerID)] == containerID {
+					containerID = ID
+					IsItShortId = true
+					break
+				}
+			}
+			if !IsItShortId {
+				return authorization.Response{Allow: true}
+			}
 		}
 
 		containerID = containerID[:12]
-
-		log.Println("Container ID:", containerID)
 		keyFromMapa, found := database[containerID]
-		log.Println("keyFromMapa:", keyFromMapa)
 		if found {
 			if keyFromMapa == key {
-				log.Println("keyFromMapa equal key")
 				return authorization.Response{Allow: true}
 			} else {
-				return authorization.Response{Allow: false, Msg: "Access denied by casbin plugin. That's not your container"}
+				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. That's not your container"}
 			}
 		} else {
 			log.Println("That's container was created right now:", containerID)
@@ -184,34 +183,51 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	}
 
 	if strings.Contains(obj, "/v1.43/exec/") {
-		parts := strings.Split(obj, "/")
-		containerID := parts[3]
+		key, found := req.RequestHeaders["Authheader"]
+		if !found {
+			return authorization.Response{Allow: false, Msg: "Access denied by auth plugin. Authheader is Empty. Follow instruction - example.com"}
+		}
+		partsOfApi := strings.Split(obj, "/")
+		containerID := partsOfApi[3]
+		isitNameOfContainer := false
+		// is it a name of container
+		for id := range nameAndIdMapping {
+			if containerID == nameAndIdMapping[id] {
+				isitNameOfContainer = true
+				// redefining
+				containerID = id
+				break
+			}
+		}
+		// if user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
+		if len(containerID) != 64 && len(containerID) != 12 && !isitNameOfContainer {
+			IsItShortId := false
+			if len(containerID) > 12 {
+				containerID = containerID[:12]
+			}
+			for ID, _ := range database {
+				if ID[:len(containerID)] == containerID {
+					containerID = ID
+					IsItShortId = true
+					break
+				}
+			}
+			if !IsItShortId {
+				return authorization.Response{Allow: true}
+			}
+		}
+		containerID = containerID[:12]
 		// can't exec at the container what doesn't exist
 		keyFromMapa, found := database[containerID]
-		log.Println("keyFromMapa:", keyFromMapa)
 		if found {
 			if keyFromMapa == key {
-				log.Println("Database:", database)
 				return authorization.Response{Allow: true}
 			} else {
-				return authorization.Response{Allow: false, Msg: "Access denied by casbin plugin"}
+				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. You can't exec other people's containers"}
 			}
 		}
 	}
 
-	// Check rules from the config. [Denied all what not allow]. Need to check in the end?
-	allowed, err := plugin.enforcer.Enforce(obj, act)
-	if err != nil {
-		log.Println(err)
-		return authorization.Response{Allow: false, Msg: "Access denied by auth plugin. "}
-	}
-
-	if allowed {
-		log.Println("obj:", obj, ", act:", act, "res: allowed")
-		return authorization.Response{Allow: true}
-	}
-
-	log.Println("ALLOW ALL")
 	return authorization.Response{Allow: true}
 }
 

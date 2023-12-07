@@ -1,6 +1,6 @@
 p, /_ping, GET
 p, /v1.43/images/json, GET
-p, /v1.43/auth, POST
 p, /v1.43/plugins, GET
 p, /v1.43/containers/buildx_buildkit_default/json, GET
-p, /v1.43/containers/create, POST
+p, /v1.43/containers/json, GET
+p, /v1.43/containers/json?all=1, GET
