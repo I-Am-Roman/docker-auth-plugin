@@ -55,7 +55,6 @@ func CheckDatabaseAndMakeMapa() error {
 		if hasSlash {
 			name = strings.TrimLeft(name, "/")
 		}
-
 		isItIdExist[ID] = true
 		if _, exists := nameAndIdMapping[ID]; !exists {
 			nameAndIdMapping[ID] = name
@@ -72,13 +71,11 @@ func CheckDatabaseAndMakeMapa() error {
 
 	for oldId := range keysToDelete {
 		delete(nameAndIdMapping, oldId)
-
 		_, found := database[oldId]
 		if found {
 			delete(database, oldId)
 		}
 	}
-
 	//------------------------------------------
 	// DEBUG
 	log.Println("NameAndIdMapping:", nameAndIdMapping)
