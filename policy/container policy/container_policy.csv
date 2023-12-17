@@ -1,0 +1,10 @@
+Cmd,--security-opt,cmd
+Privileged,false,bool
+CapAdd,null,slice
+Binds,null,slice
+IpcMode,,string
+PidMode,,string
+CgroupParent,,string
+PathOnHost,,string
+PathInContainer,,string
+NetworkMode,default,string

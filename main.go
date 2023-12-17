@@ -1,17 +1,3 @@
-// Copyright 2019 The casbin Authors. All Rights Reserved.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
-
 package main
 
 import (
@@ -30,8 +16,9 @@ const (
 )
 
 var (
-	casbinModel = flag.String("model", "examples/basic_model.conf", "Specifies the Casbin model file")
-	casbinPolicy = flag.String("policy", "examples/basic_policy.csv", "Specifies the Casbin policy file")
+	authModel       = flag.String("model", "policy/basic_model.conf", "Specifies the model file")
+	authPolicy      = flag.String("policy", "policy/basic_policy.csv", "Specifies the policy file")
+	containerPolicy = flag.String("container policy", "policy/container policy/container_policy.csv", "Specifies the container policy file")
 )
 
 func main() {
@@ -39,11 +26,12 @@ func main() {
 	flag.Parse()
 	pwd, _ := os.Getwd()
 	log.Println("Current directory:", pwd)
-	log.Println("Casbin model:", *casbinModel)
-	log.Println("Casbin policy:", *casbinPolicy)
+	log.Println("Auth model:", *authModel)
+	log.Println("Auth policy:", *authPolicy)
+	log.Println("Container policy:", *containerPolicy)
 
 	// Create Casbin authorization plugin
-	plugin, err := plugin.NewPlugin(*casbinModel, *casbinPolicy)
+	plugin, err := plugin.NewPlugin(*authModel, *authPolicy)
 	if err != nil {
 		log.Fatal(err)
 	}

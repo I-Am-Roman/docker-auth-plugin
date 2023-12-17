@@ -2,9 +2,14 @@ package plugin
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/csv"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"net/url"
+	"os"
+	"regexp"
 	"strings"
 
 	"github.com/casbin/casbin/v2"
@@ -84,6 +89,68 @@ func CheckDatabaseAndMakeMapa() error {
 	return nil
 }
 
+func calculateHash(key string) string {
+	hasher := sha256.New()
+	hasher.Write([]byte(key))
+
+	hashKey := hex.EncodeToString(hasher.Sum(nil))
+	return hashKey
+}
+
+func complyTheContainerPolicy(body string) (bool, string) {
+	file, err := os.Open("policy/container policy/container_policy.csv")
+	if err != nil {
+		e := fmt.Sprintf("Ошибка при открытии файла:%e", err)
+		return false, e
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		e := fmt.Sprintf("Ошибка при чтении CSV:%e", err)
+		return false, e
+	}
+
+	for _, row := range records {
+		nameOfKey := row[0]
+		value := row[1]
+		typeOfData := row[2]
+
+		var searcher string
+		var mustNotContain = false
+
+		switch typeOfData {
+		case "slice":
+			searcher = fmt.Sprintf(`"%s":\["([^"]+(?:","[^"]+)*)"\]`, nameOfKey)
+		case "string":
+			searcher = fmt.Sprintf(`"%s":"([^"]+)"`, nameOfKey)
+		case "bool":
+			searcher = fmt.Sprintf(`"%s":([^",]+)`, nameOfKey)
+		case "cmd":
+			searcher = fmt.Sprintf(`"%s":\["([^"]+(?:","[^"]+)*)"\]`, nameOfKey)
+			mustNotContain = true
+		}
+		re := regexp.MustCompile(searcher)
+		match := re.FindStringSubmatch(body)
+		if match != nil {
+			if !mustNotContain {
+				if match[1] != value {
+					return false, nameOfKey
+				}
+			} else {
+				data := "\"" + match[1] + "\""
+				if strings.Contains(data, value) {
+					return false, nameOfKey
+				} else {
+					continue
+				}
+			}
+		}
+	}
+	return true, ""
+}
+
 // AuthZReq authorizes the docker client command.
 // The command is allowed only if it matches a Casbin policy rule.
 // Otherwise, the request is denied!
@@ -102,6 +169,9 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	act := req.RequestMethod
 	reqBody, _ := url.QueryUnescape(string(req.RequestBody))
 
+	re := regexp.MustCompile(`/v\d+\.\d+/`)
+	obj = re.ReplaceAllString(obj, "/")
+
 	//------------------------------------------
 	// DEBUG
 	log.Println("Headers:", req.RequestHeaders)
@@ -109,6 +179,20 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	log.Println("Api:", obj)
 	log.Println("Body:", reqBody)
 	//------------------------------------------
+
+	updateRegex := regexp.MustCompile(`/containers/[^/]+/update$`)
+	if obj == "/containers/create" || updateRegex.MatchString(obj) {
+		comply, object := complyTheContainerPolicy(reqBody)
+		if !comply {
+			wordRegex := regexp.MustCompile(`^\w+$`)
+			if wordRegex.MatchString(object) {
+				msg := fmt.Sprintf("Container Body not comply container policy: %s", object)
+				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin." + msg}
+			} else {
+				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin." + object}
+			}
+		}
+	}
 
 	// here we mush to allow /containers/json?all=1, otherwise we'll stuck at endless loop because of checkDatabaseAndMakeMapa
 	allowed, err := plugin.enforcer.Enforce(obj, act)
@@ -121,12 +205,19 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		log.Println("obj:", obj, ", act:", act, "res: allowed")
 		return authorization.Response{Allow: true}
 	}
+	if req.RequestHeaders["Authheader"] == os.Getenv("API_KEY") {
+		log.Println("Bypass for admin")
+		return authorization.Response{Allow: true}
+	}
 
-	if strings.Contains(obj, "/v1.43/containers/") {
+	// make here backdore for admin
+
+	if strings.Contains(obj, "/containers/") {
 		key, found := req.RequestHeaders["Authheader"]
 		if !found {
 			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Authheader is Empty. Follow instruction - example.com"}
 		}
+		keyHash := calculateHash(key)
 
 		err := CheckDatabaseAndMakeMapa()
 		if err != nil {
@@ -135,7 +226,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		}
 
 		partsOfApi := strings.Split(obj, "/")
-		containerID := partsOfApi[3]
+		containerID := partsOfApi[2]
 		isitNameOfContainer := false
 		// is it a name of container
 		for id := range nameAndIdMapping {
@@ -167,25 +258,25 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		containerID = containerID[:12]
 		keyFromMapa, found := database[containerID]
 		if found {
-			if keyFromMapa == key {
+			if keyFromMapa == keyHash {
 				return authorization.Response{Allow: true}
 			} else {
 				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. That's not your container"}
 			}
 		} else {
 			log.Println("That's container was created right now:", containerID)
-			database[containerID] = key
+			database[containerID] = keyHash
 			return authorization.Response{Allow: true}
 		}
 	}
 
-	if strings.Contains(obj, "/v1.43/exec/") {
+	if strings.Contains(obj, "/exec/") {
 		key, found := req.RequestHeaders["Authheader"]
 		if !found {
 			return authorization.Response{Allow: false, Msg: "Access denied by auth plugin. Authheader is Empty. Follow instruction - example.com"}
 		}
 		partsOfApi := strings.Split(obj, "/")
-		containerID := partsOfApi[3]
+		containerID := partsOfApi[2]
 		isitNameOfContainer := false
 		// is it a name of container
 		for id := range nameAndIdMapping {
@@ -224,7 +315,6 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 			}
 		}
 	}
-
 	return authorization.Response{Allow: true}
 }
 
