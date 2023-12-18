@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	pluginSocket = "/run/docker/plugins/casbin-authz-plugin.sock"
+	pluginSocket = "/run/docker/plugins/container-authz-plugin.sock"
 )
 
 var (

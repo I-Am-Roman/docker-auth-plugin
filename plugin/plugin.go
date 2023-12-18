@@ -18,8 +18,16 @@ import (
 	"github.com/docker/go-plugins-helpers/authorization"
 )
 
-var database = make(map[string]string)
-var nameAndIdMapping = make(map[string]string)
+var (
+	database         = make(map[string]string)
+	nameAndIdMapping = make(map[string]string)
+	AllowToDo        = []string{
+		"/_ping",
+		"/images/json",
+		"/containers/json?all=1",
+		"/containers/json",
+	}
+)
 
 // CasbinAuthZPlugin is the Casbin Authorization Plugin
 type CasbinAuthZPlugin struct {
@@ -180,6 +188,12 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	log.Println("Body:", reqBody)
 	//------------------------------------------
 
+	for _, j := range AllowToDo {
+		if obj == j {
+			return authorization.Response{Allow: true}
+		}
+	}
+
 	updateRegex := regexp.MustCompile(`/containers/[^/]+/update$`)
 	if obj == "/containers/create" || updateRegex.MatchString(obj) {
 		comply, object := complyTheContainerPolicy(reqBody)
@@ -195,16 +209,17 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	}
 
 	// here we mush to allow /containers/json?all=1, otherwise we'll stuck at endless loop because of checkDatabaseAndMakeMapa
-	allowed, err := plugin.enforcer.Enforce(obj, act)
+	deny, err := plugin.enforcer.Enforce(obj, act)
 	if err != nil {
 		log.Println(err)
 		return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Error"}
 	}
 
-	if allowed {
-		log.Println("obj:", obj, ", act:", act, "res: allowed")
-		return authorization.Response{Allow: true}
+	if deny {
+		log.Println("obj:", obj, ", act:", act, "res: deny")
+		return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
 	}
+
 	if req.RequestHeaders["Authheader"] == os.Getenv("API_KEY") {
 		log.Println("Bypass for admin")
 		return authorization.Response{Allow: true}
