@@ -8,3 +8,4 @@ CgroupParent,,string
 PathOnHost,,string
 PathInContainer,,string
 NetworkMode,default,string
+SecurityOpt,null,slice
