@@ -1,4 +1,3 @@
-Cmd,--security-opt,cmd
 Privileged,false,bool
 CapAdd,null,slice
 Binds,null,slice

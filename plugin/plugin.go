@@ -27,6 +27,12 @@ var (
 		"/containers/json?all=1",
 		"/containers/json",
 	}
+	ForbiddenToDo = []string{
+		"/commit",
+		"/volumes/create",
+		"/volumes",
+		"/plugins",
+	}
 )
 
 // CasbinAuthZPlugin is the Casbin Authorization Plugin
@@ -209,15 +215,21 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	}
 
 	// here we mush to allow /containers/json?all=1, otherwise we'll stuck at endless loop because of checkDatabaseAndMakeMapa
-	deny, err := plugin.enforcer.Enforce(obj, act)
-	if err != nil {
-		log.Println(err)
-		return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Error"}
-	}
+	// deny, err := plugin.enforcer.Enforce(obj, act)
+	// if err != nil {
+	// 	log.Println(err)
+	// 	return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Error"}
+	// }
 
-	if deny {
-		log.Println("obj:", obj, ", act:", act, "res: deny")
-		return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
+	// if deny {
+	// 	log.Println("obj:", obj, ", act:", act, "res: deny")
+	// 	return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
+	// }
+
+	for _, j := range ForbiddenToDo {
+		if strings.HasPrefix(obj, j) {
+			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
+		}
 	}
 
 	if req.RequestHeaders["Authheader"] == os.Getenv("API_KEY") {
@@ -227,7 +239,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 
 	// make here backdore for admin
 
-	if strings.Contains(obj, "/containers/") {
+	if strings.HasPrefix(obj, "/containers/") {
 		key, found := req.RequestHeaders["Authheader"]
 		if !found {
 			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Authheader is Empty. Follow instruction - example.com"}
