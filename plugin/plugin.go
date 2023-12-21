@@ -18,6 +18,14 @@ import (
 	"github.com/docker/go-plugins-helpers/authorization"
 )
 
+const (
+	creationContainerAPI   = "/containers/create"
+	actionWithContainerAPI = "/containers/"
+	execAtContainerAPI     = "/exec/"
+	headerWithToken        = "Authheader"
+	manual                 = "https://confluence.o3.ru/"
+)
+
 var (
 	database         = make(map[string]string)
 	nameAndIdMapping = make(map[string]string)
@@ -51,6 +59,8 @@ func NewPlugin(casbinModel string, casbinPolicy string) (*CasbinAuthZPlugin, err
 	return plugin, err
 }
 
+// Since to containers can be accessed by name, we MUST to know a name of container
+// We also solving the problem suspended in the air containers
 func CheckDatabaseAndMakeMapa() error {
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -59,28 +69,33 @@ func CheckDatabaseAndMakeMapa() error {
 	}
 	defer cli.Close()
 
+	// make "docker ps -a"
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
 	if err != nil {
 		return err
 	}
 
 	// Create map for a quick check of uniqueness
+	// Get info from docker daemon and confidently speak
+	// this container exist
 	isItIdExist := make(map[string]bool)
 	for _, container := range containers {
 		ID := container.ID[:12]
 		// docker daemon usually return /<nameOfContainer>
+		// that's why we need to crop a "/""
 		name := container.Names[0]
 		hasSlash := strings.Contains(name, "/")
 		if hasSlash {
 			name = strings.TrimLeft(name, "/")
 		}
 		isItIdExist[ID] = true
+		// Put new ID at nameAndIdMapping, don't forget about old containers
 		if _, exists := nameAndIdMapping[ID]; !exists {
 			nameAndIdMapping[ID] = name
 		}
 	}
 
-	// Create temporary map for key storage we need tp delete
+	// Create temporary map for key storage we need to delete from nameAndIdMapping
 	keysToDelete := make(map[string]bool)
 	for key := range nameAndIdMapping {
 		if !isItIdExist[key] {
@@ -88,6 +103,7 @@ func CheckDatabaseAndMakeMapa() error {
 		}
 	}
 
+	// delete old container also from database
 	for oldId := range keysToDelete {
 		delete(nameAndIdMapping, oldId)
 		_, found := database[oldId]
@@ -103,7 +119,9 @@ func CheckDatabaseAndMakeMapa() error {
 	return nil
 }
 
-func calculateHash(key string) string {
+// We don't need to save at database a real value of key
+// Let's save a hash
+func CalculateHash(key string) string {
 	hasher := sha256.New()
 	hasher.Write([]byte(key))
 
@@ -111,10 +129,14 @@ func calculateHash(key string) string {
 	return hashKey
 }
 
-func complyTheContainerPolicy(body string) (bool, string) {
-	file, err := os.Open("policy/container policy/container_policy.csv")
+// Policy for creation container. There are 2 type of checking:
+// 1) value of key from body MUST to be equal value from our csv
+// 2) mustNotContain=true, value MUST not contain some value, what we don't want to see
+func ComplyTheContainerPolicy(body string) (bool, string) {
+	// We need get if from main.go
+	file, err := os.Open("container policy/container_policy.csv")
 	if err != nil {
-		e := fmt.Sprintf("Ошибка при открытии файла:%e", err)
+		e := fmt.Sprintf("Error opening the file: %e", err)
 		return false, e
 	}
 	defer file.Close()
@@ -122,7 +144,7 @@ func complyTheContainerPolicy(body string) (bool, string) {
 	reader := csv.NewReader(file)
 	records, err := reader.ReadAll()
 	if err != nil {
-		e := fmt.Sprintf("Ошибка при чтении CSV:%e", err)
+		e := fmt.Sprintf("Error reading CSV:%e", err)
 		return false, e
 	}
 
@@ -166,8 +188,6 @@ func complyTheContainerPolicy(body string) (bool, string) {
 }
 
 // AuthZReq authorizes the docker client command.
-// The command is allowed only if it matches a Casbin policy rule.
-// Otherwise, the request is denied!
 func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorization.Response {
 	// Parse request and the request body
 	log.Println("------------------------------------------------------------------")
@@ -183,6 +203,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	act := req.RequestMethod
 	reqBody, _ := url.QueryUnescape(string(req.RequestBody))
 
+	// cropping the version /v1.42/containers/...
 	re := regexp.MustCompile(`/v\d+\.\d+/`)
 	obj = re.ReplaceAllString(obj, "/")
 
@@ -194,16 +215,29 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	log.Println("Body:", reqBody)
 	//------------------------------------------
 
+	// bypass for admin
+	if req.RequestHeaders[headerWithToken] == os.Getenv("API_KEY") {
+		log.Println("Bypass for admin")
+		return authorization.Response{Allow: true}
+	}
+
 	for _, j := range AllowToDo {
 		if obj == j {
 			return authorization.Response{Allow: true}
 		}
 	}
 
+	for _, j := range ForbiddenToDo {
+		if strings.HasPrefix(obj, j) {
+			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
+		}
+	}
+
 	updateRegex := regexp.MustCompile(`/containers/[^/]+/update$`)
-	if obj == "/containers/create" || updateRegex.MatchString(obj) {
-		comply, object := complyTheContainerPolicy(reqBody)
+	if obj == creationContainerAPI || updateRegex.MatchString(obj) {
+		comply, object := ComplyTheContainerPolicy(reqBody)
 		if !comply {
+			// ???
 			wordRegex := regexp.MustCompile(`^\w+$`)
 			if wordRegex.MatchString(object) {
 				msg := fmt.Sprintf("Container Body not comply container policy: %s", object)
@@ -214,37 +248,13 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		}
 	}
 
-	// here we mush to allow /containers/json?all=1, otherwise we'll stuck at endless loop because of checkDatabaseAndMakeMapa
-	// deny, err := plugin.enforcer.Enforce(obj, act)
-	// if err != nil {
-	// 	log.Println(err)
-	// 	return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Error"}
-	// }
-
-	// if deny {
-	// 	log.Println("obj:", obj, ", act:", act, "res: deny")
-	// 	return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
-	// }
-
-	for _, j := range ForbiddenToDo {
-		if strings.HasPrefix(obj, j) {
-			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
-		}
-	}
-
-	if req.RequestHeaders["Authheader"] == os.Getenv("API_KEY") {
-		log.Println("Bypass for admin")
-		return authorization.Response{Allow: true}
-	}
-
-	// make here backdore for admin
-
-	if strings.HasPrefix(obj, "/containers/") {
-		key, found := req.RequestHeaders["Authheader"]
+	if strings.HasPrefix(obj, actionWithContainerAPI) {
+		key, found := req.RequestHeaders[headerWithToken]
 		if !found {
-			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. Authheader is Empty. Follow instruction - example.com"}
+			instruction := fmt.Sprintf("Access denied by AuthPLugin. Authheader is Empty. Follow instruction - %s", manual)
+			return authorization.Response{Allow: false, Msg: instruction}
 		}
-		keyHash := calculateHash(key)
+		keyHash := CalculateHash(key)
 
 		err := CheckDatabaseAndMakeMapa()
 		if err != nil {
@@ -255,11 +265,11 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		partsOfApi := strings.Split(obj, "/")
 		containerID := partsOfApi[2]
 		isitNameOfContainer := false
-		// is it a name of container
+		// Is it a name of container
 		for id := range nameAndIdMapping {
 			if containerID == nameAndIdMapping[id] {
 				isitNameOfContainer = true
-				// redefining
+				// redefining containerID
 				containerID = id
 				break
 			}
@@ -277,6 +287,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 					break
 				}
 			}
+			// we get a trash. Is it bypass. Need to check!
 			if !IsItShortId {
 				return authorization.Response{Allow: true}
 			}
@@ -297,10 +308,11 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		}
 	}
 
-	if strings.Contains(obj, "/exec/") {
-		key, found := req.RequestHeaders["Authheader"]
+	if strings.HasPrefix(obj, execAtContainerAPI) {
+		key, found := req.RequestHeaders[headerWithToken]
 		if !found {
-			return authorization.Response{Allow: false, Msg: "Access denied by auth plugin. Authheader is Empty. Follow instruction - example.com"}
+			instruction := fmt.Sprintf("Access denied by AuthPLugin. Authheader is Empty. Follow instruction - %s", manual)
+			return authorization.Response{Allow: false, Msg: instruction}
 		}
 		partsOfApi := strings.Split(obj, "/")
 		containerID := partsOfApi[2]
