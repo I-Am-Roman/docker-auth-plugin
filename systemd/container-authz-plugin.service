@@ -1,11 +1,11 @@
 [Unit]
 Description=Docker RBAC & ABAC Authorization Plugin based on Casbin
 Before=docker.service
-After=network.target casbin-authz-plugin.socket
-Requires=casbin-authz-plugin.socket docker.service
+After=network.target container-authz-plugin.socket
+Requires=container-authz-plugin.socket docker.service
 
 [Service]
-ExecStart=/usr/lib/docker/casbin-authz-plugin
+ExecStart=/usr/lib/docker/container-authz-plugin
 WorkingDirectory=/usr/lib/docker
 
 [Install]

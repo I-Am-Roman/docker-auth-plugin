@@ -134,7 +134,7 @@ func CalculateHash(key string) string {
 // 2) mustNotContain=true, value MUST not contain some value, what we don't want to see
 func ComplyTheContainerPolicy(body string) (bool, string) {
 	// We need get if from main.go
-	file, err := os.Open("container policy/container_policy.csv")
+	file, err := os.Open("containerPolicy/container_policy.csv")
 	if err != nil {
 		e := fmt.Sprintf("Error opening the file: %e", err)
 		return false, e
@@ -216,7 +216,8 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	//------------------------------------------
 
 	// bypass for admin
-	if req.RequestHeaders[headerWithToken] == os.Getenv("API_KEY") {
+	if req.RequestHeaders[headerWithToken] == os.Getenv("API_KEY") &&
+		req.RequestHeaders[headerWithToken] != "" {
 		log.Println("Bypass for admin")
 		return authorization.Response{Allow: true}
 	}

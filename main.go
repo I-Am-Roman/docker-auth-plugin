@@ -18,7 +18,7 @@ const (
 var (
 	authModel       = flag.String("model", "policy/basic_model.conf", "Specifies the model file")
 	authPolicy      = flag.String("policy", "policy/basic_policy.csv", "Specifies the policy file")
-	containerPolicy = flag.String("container policy", "container policy/container_policy.csv", "Specifies the container policy file")
+	containerPolicy = flag.String("container policy", "containerPolicy/container_policy.csv", "Specifies the container policy file")
 )
 
 func main() {

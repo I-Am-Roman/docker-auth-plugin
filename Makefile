@@ -13,8 +13,9 @@ install:
 	install -m 644 systemd/container-authz-plugin.service ${LIBDIR}
 	install -m 644 systemd/container-authz-plugin.socket ${LIBDIR}
 	install -m 755 container-authz-plugin ${BINDIR}
-	install -m 644 policy/basic_model.conf ${BINDIR}
-	install -m 644 policy/basic_policy.csv ${BINDIR}
+	install -m 644 policy/basic_model.conf ${BINDIR}/policy
+	install -m 644 policy/basic_policy.csv ${BINDIR}/policy
+	install -m 644 containerPolicy/container_policy.csv ${BINDIR}
 
 clean:
 	rm -f container-authz-plugin

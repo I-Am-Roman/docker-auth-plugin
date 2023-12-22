@@ -1,0 +1,9 @@
+Privileged,false,bool
+CapAdd,null,slice
+IpcMode,,string
+PidMode,,string
+CgroupParent,,string
+PathOnHost,,string
+PathInContainer,,string
+NetworkMode,default,string
+SecurityOpt,null,slice
