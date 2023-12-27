@@ -3,7 +3,6 @@ package plugin
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/csv"
 	"encoding/hex"
 	"fmt"
 	"log"
@@ -12,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 
+	containerpolicy "github.com/casbin/casbin-authz-plugin/containerPolicy"
 	"github.com/casbin/casbin/v2"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/client"
@@ -129,64 +129,6 @@ func CalculateHash(key string) string {
 	return hashKey
 }
 
-// Policy for creation container. There are 2 type of checking:
-// 1) value of key from body MUST to be equal value from our csv
-// 2) mustNotContain=true, value MUST not contain some value, what we don't want to see
-func ComplyTheContainerPolicy(body string) (bool, string) {
-	// We need get if from main.go
-	file, err := os.Open("containerPolicy/container_policy.csv")
-	if err != nil {
-		e := fmt.Sprintf("Error opening the file: %e", err)
-		return false, e
-	}
-	defer file.Close()
-
-	reader := csv.NewReader(file)
-	records, err := reader.ReadAll()
-	if err != nil {
-		e := fmt.Sprintf("Error reading CSV:%e", err)
-		return false, e
-	}
-
-	for _, row := range records {
-		nameOfKey := row[0]
-		value := row[1]
-		typeOfData := row[2]
-
-		var searcher string
-		var mustNotContain = false
-
-		switch typeOfData {
-		case "slice":
-			searcher = fmt.Sprintf(`"%s":\["([^"]+(?:","[^"]+)*)"\]`, nameOfKey)
-		case "string":
-			searcher = fmt.Sprintf(`"%s":"([^"]+)"`, nameOfKey)
-		case "bool":
-			searcher = fmt.Sprintf(`"%s":([^",]+)`, nameOfKey)
-		case "cmd":
-			searcher = fmt.Sprintf(`"%s":\["([^"]+(?:","[^"]+)*)"\]`, nameOfKey)
-			mustNotContain = true
-		}
-		re := regexp.MustCompile(searcher)
-		match := re.FindStringSubmatch(body)
-		if match != nil {
-			if !mustNotContain {
-				if match[1] != value {
-					return false, nameOfKey
-				}
-			} else {
-				data := "\"" + match[1] + "\""
-				if strings.Contains(data, value) {
-					return false, nameOfKey
-				} else {
-					continue
-				}
-			}
-		}
-	}
-	return true, ""
-}
-
 // AuthZReq authorizes the docker client command.
 func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorization.Response {
 	// Parse request and the request body
@@ -236,7 +178,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 
 	updateRegex := regexp.MustCompile(`/containers/[^/]+/update$`)
 	if obj == creationContainerAPI || updateRegex.MatchString(obj) {
-		comply, object := ComplyTheContainerPolicy(reqBody)
+		comply, object := containerpolicy.ComplyTheContainerPolicy(reqBody)
 		if !comply {
 			// ???
 			wordRegex := regexp.MustCompile(`^\w+$`)
