@@ -15,14 +15,17 @@ This plugin controls the access to Docker commands based on authorization policy
    * ``/volumes`` docker volumes ls,  docker volumes create and etc
    * ``/commit``
 4. The prohibition on creation containers with:
-   * ``--privileged  (Запрет на создание с параметром "Privileged" НЕ РАВНЫМ false)``
-   * ``--cap-add  (Запрет на создание с параметром "CapAdd" НЕ РАВНЫМ null)--cap-add  (Запрет на создание с параметром "CapAdd" НЕ РАВНЫМ null)``
-   * ``--security-opt  (Запрет на использование флага --security-opt)--security-opt(Запрет на использование флага --security-opt)``
-   * ``--pid  (Запрет на создание с параметром "PidMode" НЕ РАВНЫМ ''(пустой строке))``
-   * ``--ipc   (Запрет на создание с параметром "IpcMode" НЕ РАВНЫМ ''(пустой строке))``
-   * ``-v (Запрет на создание с параметром "Binds" НЕ РАВНЫМ null)``
-   * ``--cgroup-parent (Запрет на создание с параметром "CgroupParent" НЕ РАВНЫМ ''(пустой строке))``
-   * ``--device (Запрет на создание с параметром "PathOnHost" и "PathInContainer" НЕ РАВНЫМ ''(пустой строке)"``
+   * ``--privileged ("Privileged" not equal false)``
+   * ``--cap-add  ("CapAdd" not equal null)``
+   * ``--security-opt ("SecurityOpt" not equal null)``
+   * ``--pid  ("PidMode" not equal ''(empty string))``
+   * ``--ipc   ("IpcMode" not equal '',none,private)``
+   * ``-v ("Binds" not equal:``
+      * ``/var/run/docker.sock:/var/run/docker.sock``
+      * ``/var/run/docker.sock:/var/run/docker.sock:rw``
+      * ``/cache,/usr/local/bin/das-cli:/usr/local/bin/das-cli:ro``
+   * ``--cgroup-parent ("CgroupParent" not equal ''(empty string))``
+   * ``--device ("Devices" и "PathInContainer" not equal ''(empty string)``
 5. Authentication when using:
    * ``docker stop``
    * ``docker inspect``
@@ -35,9 +38,12 @@ This plugin controls the access to Docker commands based on authorization policy
    * ``docker port``
    * ``docker cp``
    * ``docker update``
+   * ``docker restart``
+   * ``docker kill``
+   * and etc command what will requier action with a container
 6. Everythilg else will be allow
 
-For example, when you run ``docker commit <container ID>`` command, the underlying request is really like:
+For example, when you run ``docker commit 4648759b6574`` command, the underlying request is really like:
 
 ```
 Error response from daemon: authorization denied by plugin container-authz-plugin: Access denied by AuthPLugin: /commit?author=&comment=&container=4648759b6574&repo=&tag=

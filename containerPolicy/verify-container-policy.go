@@ -44,15 +44,17 @@ func ComplyTheContainerPolicy(body string) (bool, string) {
 
 		switch typeOfData {
 		case "slice":
+			// will ignore null and []
 			searcher = fmt.Sprintf(`"%s":\s*\[([^\]]*)\]`, nameOfKey)
 		case "string":
+			// will ignore null
 			searcher = fmt.Sprintf(`"%s":"([^"]+)"`, nameOfKey)
 		case "bool":
 			searcher = fmt.Sprintf(`"%s":([^",]+)`, nameOfKey)
 		}
 
 		re := regexp.MustCompile(searcher)
-		// if someone will want to add the same key for bybass
+		// if someone will want to add the same key with a forbidden value for bybass
 		matches := re.FindAllStringSubmatch(body, -1)
 		for _, match := range matches {
 			if match != nil {
@@ -62,28 +64,35 @@ func ComplyTheContainerPolicy(body string) (bool, string) {
 					}
 				} else if kindOfPolicy == DoesntExpectToSee {
 					csv := strings.Trim(valueFromCSV, "[]")
-					values := strings.Split(csv, ",")
-					for _, dontExpect := range values {
-						if dontExpect == match[1] {
-							return false, nameOfKey
+					sliceFromCSV := strings.Split(csv, ",")
+					// if will get: ["value1","value2","value3"]
+					// regexpr give us at match[1] - "value1","value2","value3"
+					// we should check every single value
+					valueOfMatches := strings.Split(match[1], ",")
+
+					for _, valueOfMatch := range valueOfMatches {
+						valueOfMatch := strings.Trim(valueOfMatch, "\"")
+						for _, dontExpect := range sliceFromCSV {
+							if dontExpect == valueOfMatch {
+								return false, nameOfKey
+							}
 						}
 					}
 				} else if kindOfPolicy == AllowToUse {
 					csv := strings.Trim(valueFromCSV, "[]")
-					values := strings.Split(csv, ",")
+					sliceFromCSV := strings.Split(csv, ",")
+					valueOfMatches := strings.Split(match[1], ",")
 
-					m := strings.Split(match[1], ",")
-
-					for _, valueOfmatch := range m {
-						valueOfmatch = strings.Trim(valueOfmatch, "\"\"")
-						flag := false
-						for _, dontExpect := range values {
-							if dontExpect == valueOfmatch {
-								flag = true
+					for _, valueOfMatch := range valueOfMatches {
+						valueOfMatch = strings.Trim(valueOfMatch, "\"")
+						isItValueOK := false
+						for _, allowToUse := range sliceFromCSV {
+							if allowToUse == valueOfMatch {
+								isItValueOK = true
 								continue
 							}
 						}
-						if !flag {
+						if !isItValueOK {
 							return false, nameOfKey
 						}
 					}
@@ -93,21 +102,6 @@ func ComplyTheContainerPolicy(body string) (bool, string) {
 				}
 			}
 		}
-
-		// if match != nil {
-		// 	if !mustNotContain {
-		// 		if match[1] != value {
-		// 			return false, nameOfKey
-		// 		}
-		// 	} else {
-		// 		data := "\"" + match[1] + "\""
-		// 		if strings.Contains(data, value) {
-		// 			return false, nameOfKey
-		// 		} else {
-		// 			continue
-		// 		}
-		// 	}
-		// }
 	}
 	return true, ""
 }
