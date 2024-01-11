@@ -16,8 +16,6 @@ const (
 )
 
 var (
-	authModel       = flag.String("model", "policy/basic_model.conf", "Specifies the model file")
-	authPolicy      = flag.String("policy", "policy/basic_policy.csv", "Specifies the policy file")
 	containerPolicy = flag.String("container policy", "containerPolicy/container_policy.csv", "Specifies the container policy file")
 )
 
@@ -26,12 +24,10 @@ func main() {
 	flag.Parse()
 	pwd, _ := os.Getwd()
 	log.Println("Current directory:", pwd)
-	log.Println("Auth model:", *authModel)
-	log.Println("Auth policy:", *authPolicy)
 	log.Println("Container policy:", *containerPolicy)
 
 	// Create Casbin authorization plugin
-	plugin, err := plugin.NewPlugin(*authModel, *authPolicy)
+	plugin, err := plugin.NewPlugin()
 	if err != nil {
 		log.Fatal(err)
 	}

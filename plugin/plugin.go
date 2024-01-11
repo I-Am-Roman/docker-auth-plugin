@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 
@@ -23,6 +22,7 @@ const (
 	actionWithContainerAPI = "/containers/"
 	execAtContainerAPI     = "/exec/"
 	headerWithToken        = "Authheader"
+	trash                  = "Trash"
 	manual                 = "https://confluence.o3.ru/"
 )
 
@@ -50,13 +50,72 @@ type CasbinAuthZPlugin struct {
 }
 
 // newPlugin creates a new casbin authorization plugin
-func NewPlugin(casbinModel string, casbinPolicy string) (*CasbinAuthZPlugin, error) {
+func NewPlugin() (*CasbinAuthZPlugin, error) {
 	plugin := &CasbinAuthZPlugin{}
 
 	var err error
-	plugin.enforcer, err = casbin.NewEnforcer(casbinModel, casbinPolicy)
+	plugin.enforcer, err = casbin.NewEnforcer()
 
 	return plugin, err
+}
+
+// bypass for admin
+func IsItAdmin(keyHash string) bool {
+	// if req.RequestHeaders[headerWithToken] != "" {
+	// 	keyHash := CalculateHash(req.RequestHeaders[headerWithToken])
+	// 	// HIDE THE HASH
+
+	if keyHash == "5eadd4469cb89b077017168e392e7920ba91da5b5f26917224fc6312939d508d" {
+		log.Println("Bypass for admin")
+		return true
+	}
+	return false
+}
+
+func AllowMakeTheAction(keyHashFromMapa string, keyHash string) bool {
+	if keyHashFromMapa == keyHash {
+		return true
+	} else {
+		if yes := IsItAdmin(keyHash); yes {
+			return true
+		}
+		return false
+	}
+}
+
+func DefineContainerID(obj string) string {
+	partsOfApi := strings.Split(obj, "/")
+	containerID := partsOfApi[2]
+	isitNameOfContainer := false
+	// Is it a name of container
+	for id := range nameAndIdMapping {
+		if containerID == nameAndIdMapping[id] {
+			isitNameOfContainer = true
+			// redefining containerID
+			containerID = id
+			break
+		}
+	}
+	// if user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
+	if len(containerID) != 64 && len(containerID) != 12 && !isitNameOfContainer {
+		IsItShortId := false
+		if len(containerID) > 12 {
+			containerID = containerID[:12]
+		}
+		for ID, _ := range database {
+			if ID[:len(containerID)] == containerID {
+				containerID = ID
+				IsItShortId = true
+				break
+			}
+		}
+		// we get a trash. Is it bypass. Need to check!
+		if !IsItShortId {
+			return trash
+		}
+	}
+
+	return containerID[:12]
 }
 
 // Since to containers can be accessed by name, we MUST to know a name of container
@@ -157,13 +216,6 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	log.Println("Body:", reqBody)
 	//------------------------------------------
 
-	// bypass for admin
-	if req.RequestHeaders[headerWithToken] == os.Getenv("API_KEY") &&
-		req.RequestHeaders[headerWithToken] != "" {
-		log.Println("Bypass for admin")
-		return authorization.Response{Allow: true}
-	}
-
 	for _, j := range AllowToDo {
 		if obj == j {
 			return authorization.Response{Allow: true}
@@ -178,9 +230,17 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 
 	updateRegex := regexp.MustCompile(`/containers/[^/]+/update$`)
 	if obj == creationContainerAPI || updateRegex.MatchString(obj) {
+
+		if req.RequestHeaders[headerWithToken] != "" {
+			keyHash := CalculateHash(req.RequestHeaders[headerWithToken])
+			if yes := IsItAdmin(keyHash); yes {
+				return authorization.Response{Allow: true}
+			}
+		}
+		// Allow create without AuthHeader, because at this step i don't have container ID
 		comply, object := containerpolicy.ComplyTheContainerPolicy(reqBody)
 		if !comply {
-			// ???
+			// if we fall, we get a failed policy
 			wordRegex := regexp.MustCompile(`^\w+$`)
 			if wordRegex.MatchString(object) {
 				msg := fmt.Sprintf("Container Body not comply container policy: %s", object)
@@ -205,41 +265,14 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 			log.Println(errorMsg)
 		}
 
-		partsOfApi := strings.Split(obj, "/")
-		containerID := partsOfApi[2]
-		isitNameOfContainer := false
-		// Is it a name of container
-		for id := range nameAndIdMapping {
-			if containerID == nameAndIdMapping[id] {
-				isitNameOfContainer = true
-				// redefining containerID
-				containerID = id
-				break
-			}
-		}
-		// if user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
-		if len(containerID) != 64 && len(containerID) != 12 && !isitNameOfContainer {
-			IsItShortId := false
-			if len(containerID) > 12 {
-				containerID = containerID[:12]
-			}
-			for ID, _ := range database {
-				if ID[:len(containerID)] == containerID {
-					containerID = ID
-					IsItShortId = true
-					break
-				}
-			}
-			// we get a trash. Is it bypass. Need to check!
-			if !IsItShortId {
-				return authorization.Response{Allow: true}
-			}
+		containerID := DefineContainerID(obj)
+		if containerID == trash {
+			return authorization.Response{Allow: true}
 		}
 
-		containerID = containerID[:12]
-		keyFromMapa, found := database[containerID]
+		keyHashFromMapa, found := database[containerID]
 		if found {
-			if keyFromMapa == keyHash {
+			if allow := AllowMakeTheAction(keyHashFromMapa, keyHash); allow {
 				return authorization.Response{Allow: true}
 			} else {
 				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. That's not your container"}
@@ -252,47 +285,27 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	}
 
 	if strings.HasPrefix(obj, execAtContainerAPI) {
+
 		key, found := req.RequestHeaders[headerWithToken]
 		if !found {
 			instruction := fmt.Sprintf("Access denied by AuthPLugin. Authheader is Empty. Follow instruction - %s", manual)
 			return authorization.Response{Allow: false, Msg: instruction}
 		}
-		partsOfApi := strings.Split(obj, "/")
-		containerID := partsOfApi[2]
-		isitNameOfContainer := false
-		// is it a name of container
-		for id := range nameAndIdMapping {
-			if containerID == nameAndIdMapping[id] {
-				isitNameOfContainer = true
-				// redefining
-				containerID = id
-				break
-			}
+		keyHash := CalculateHash(key)
+		containerID := DefineContainerID(obj)
+		if containerID == trash {
+			return authorization.Response{Allow: true}
 		}
-		// if user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
-		if len(containerID) != 64 && len(containerID) != 12 && !isitNameOfContainer {
-			IsItShortId := false
-			if len(containerID) > 12 {
-				containerID = containerID[:12]
-			}
-			for ID, _ := range database {
-				if ID[:len(containerID)] == containerID {
-					containerID = ID
-					IsItShortId = true
-					break
-				}
-			}
-			if !IsItShortId {
-				return authorization.Response{Allow: true}
-			}
-		}
-		containerID = containerID[:12]
+
 		// can't exec at the container what doesn't exist
 		keyFromMapa, found := database[containerID]
 		if found {
-			if keyFromMapa == key {
+			if keyFromMapa == keyHash {
 				return authorization.Response{Allow: true}
 			} else {
+				if yes := IsItAdmin(keyHash); yes {
+					return authorization.Response{Allow: true}
+				}
 				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. You can't exec other people's containers"}
 			}
 		}

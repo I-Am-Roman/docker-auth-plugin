@@ -1,6 +1,5 @@
 Privileged,false,bool,ExpectToSee
 NetworkMode,"[host]",string,DoesntExpectToSee
-Dns,"[8.8.8.8,10.10.10.10]",slice,DoesntExpectToSee
 IpcMode,"[,none,private]",string,AllowToUse
 Binds,"[/var/run/docker.sock:/var/run/docker.sock,/var/run/docker.sock:/var/run/docker.sock:rw,/cache,/usr/local/bin/das-cli:/usr/local/bin/das-cli:ro]",slice,AllowToUse
 CapAdd,null,slice,ExpectToSee

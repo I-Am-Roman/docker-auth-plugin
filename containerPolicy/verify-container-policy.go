@@ -13,6 +13,7 @@ const (
 	ExpectToSee       = "ExpectToSee"
 	DoesntExpectToSee = "DoesntExpectToSee"
 	AllowToUse        = "AllowToUse"
+	PathToThePolicy   = "containerPolicy/container_policy.csv"
 )
 
 // Policy for creation container. There are 2 type of checking:
@@ -20,7 +21,7 @@ const (
 // 2) mustNotContain=true, value MUST not contain some value, what we don't want to see
 func ComplyTheContainerPolicy(body string) (bool, string) {
 	// We need get if from main.go
-	file, err := os.Open("containerPolicy/container_policy.csv")
+	file, err := os.Open(PathToThePolicy)
 	if err != nil {
 		e := fmt.Sprintf("Error opening the file: %e", err)
 		return false, e
