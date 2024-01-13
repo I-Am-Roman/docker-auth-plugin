@@ -16,11 +16,11 @@ const (
 	PathToThePolicy   = "containerPolicy/container_policy.csv"
 )
 
-// Policy for creation container. There are 2 type of checking:
-// 1) value of key from body MUST to be equal value from our csv
-// 2) mustNotContain=true, value MUST not contain some value, what we don't want to see
+// Policy for creation container. There are 3 type of checking:
+// 1) DoesntExpectToSee, if some of valueFromBody == valueFromPolitic - DENY
+// 2) AllowToUse, if some of valueFromBody != valueFromPolitic - DENY
+// 3) ExpectToSee, if valueFromBody != valueFromPolitic - DENY
 func ComplyTheContainerPolicy(body string) (bool, string) {
-	// We need get if from main.go
 	file, err := os.Open(PathToThePolicy)
 	if err != nil {
 		e := fmt.Sprintf("Error opening the file: %e", err)

@@ -4,7 +4,10 @@
 
 This plugin controls the access to Docker commands based on authorization policy. Plugin contains:
 
-1. Bypass for admin 
+1. Bypass for admin:
+   * Admin can exec at any containers
+   * Admin can create any containers
+   * For admin working authentication, that means admin's containers will be protected
 2. Permission to do:
    * ``/ping``
    * ``/images/json`` docker images 
@@ -15,17 +18,18 @@ This plugin controls the access to Docker commands based on authorization policy
    * ``/volumes`` docker volumes ls,  docker volumes create and etc
    * ``/commit``
 4. The prohibition on creation containers with:
-   * ``--privileged ("Privileged" not equal false)``
-   * ``--cap-add  ("CapAdd" not equal null)``
-   * ``--security-opt ("SecurityOpt" not equal null)``
-   * ``--pid  ("PidMode" not equal ''(empty string))``
-   * ``--ipc   ("IpcMode" not equal '',none,private)``
-   * ``-v ("Binds" not equal:``
+   * ``--privileged`` (Deny if "Privileged" not equal false)
+   * ``--cap-add``  (Deny if "CapAdd" not equal null)
+   * ``--security-opt`` (Deny if "SecurityOpt" not equal null)
+   * ``--pid``  (Deny if "PidMode" not equal ''(empty string))
+   * ``--ipc``   (Deny if "IpcMode" not equal '',none,private)
+   * ``-v`` Deny if "Binds" not equal:
       * ``/var/run/docker.sock:/var/run/docker.sock``
       * ``/var/run/docker.sock:/var/run/docker.sock:rw``
       * ``/cache,/usr/local/bin/das-cli:/usr/local/bin/das-cli:ro``
-   * ``--cgroup-parent ("CgroupParent" not equal ''(empty string))``
-   * ``--device ("Devices" и "PathInContainer" not equal ''(empty string)``
+   * ``--cgroup-parent`` (Deny if "CgroupParent" not equal ''(empty string))
+   * ``--device`` (Deny if "Devices" и "PathInContainer" not equal ''(empty string))
+   * ``--network`` (Deny if NetworkMode=host)
 5. Authentication when using:
    * ``docker stop``
    * ``docker inspect``
@@ -49,6 +53,10 @@ For example, when you run ``docker commit 4648759b6574`` command, the underlying
 Error response from daemon: authorization denied by plugin container-authz-plugin: Access denied by AuthPLugin: /commit?author=&comment=&container=4648759b6574&repo=&tag=
 ```
 
+If you'll try to make something (for example ``docker stop epic_buck``) with other's user container, you'll get:
+```
+Error response from daemon: authorization denied by plugin container-authz-plugin: Access denied by AuthPLugin. That's not your container
+```
 
 ## Enable the authorization plugin on docker engine
 

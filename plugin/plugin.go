@@ -27,6 +27,7 @@ const (
 )
 
 var (
+	AdminToken       string
 	database         = make(map[string]string)
 	nameAndIdMapping = make(map[string]string)
 	AllowToDo        = []string{
@@ -59,13 +60,13 @@ func NewPlugin() (*CasbinAuthZPlugin, error) {
 	return plugin, err
 }
 
-// bypass for admin
-func IsItAdmin(keyHash string) bool {
-	// if req.RequestHeaders[headerWithToken] != "" {
-	// 	keyHash := CalculateHash(req.RequestHeaders[headerWithToken])
-	// 	// HIDE THE HASH
+func DefineAdminToken(Token string) {
+	AdminToken = Token
+}
 
-	if keyHash == "5eadd4469cb89b077017168e392e7920ba91da5b5f26917224fc6312939d508d" {
+// Bypass for admin
+func IsItAdmin(keyHash string) bool {
+	if keyHash == AdminToken {
 		log.Println("Bypass for admin")
 		return true
 	}
@@ -87,29 +88,29 @@ func DefineContainerID(obj string) string {
 	partsOfApi := strings.Split(obj, "/")
 	containerID := partsOfApi[2]
 	isitNameOfContainer := false
-	// Is it a name of container
+	// Is it a name of container?
 	for id := range nameAndIdMapping {
 		if containerID == nameAndIdMapping[id] {
 			isitNameOfContainer = true
-			// redefining containerID
+			// Redefining containerID
 			containerID = id
 			break
 		}
 	}
-	// if user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
+	// If user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
 	if len(containerID) != 64 && len(containerID) != 12 && !isitNameOfContainer {
 		IsItShortId := false
 		if len(containerID) > 12 {
 			containerID = containerID[:12]
 		}
-		for ID, _ := range database {
+		for ID := range database {
 			if ID[:len(containerID)] == containerID {
 				containerID = ID
 				IsItShortId = true
 				break
 			}
 		}
-		// we get a trash. Is it bypass. Need to check!
+		// We get a trash
 		if !IsItShortId {
 			return trash
 		}
@@ -128,7 +129,7 @@ func CheckDatabaseAndMakeMapa() error {
 	}
 	defer cli.Close()
 
-	// make "docker ps -a"
+	// execute "docker ps -a"
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
 	if err != nil {
 		return err
@@ -141,7 +142,7 @@ func CheckDatabaseAndMakeMapa() error {
 	for _, container := range containers {
 		ID := container.ID[:12]
 		// docker daemon usually return /<nameOfContainer>
-		// that's why we need to crop a "/""
+		// that's why we need to TrimLeft a "/""
 		name := container.Names[0]
 		hasSlash := strings.Contains(name, "/")
 		if hasSlash {
@@ -162,7 +163,7 @@ func CheckDatabaseAndMakeMapa() error {
 		}
 	}
 
-	// delete old container also from database
+	// Delete old container also from database
 	for oldId := range keysToDelete {
 		delete(nameAndIdMapping, oldId)
 		_, found := database[oldId]
@@ -195,7 +196,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	reqURI, _ := url.QueryUnescape(req.RequestURI)
 	reqURL, _ := url.ParseRequestURI(reqURI)
 
-	// if we'll get empty request from docker
+	// If we'll get empty request from docker
 	if reqURL == nil {
 		return authorization.Response{Allow: true}
 	}
@@ -204,7 +205,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	act := req.RequestMethod
 	reqBody, _ := url.QueryUnescape(string(req.RequestBody))
 
-	// cropping the version /v1.42/containers/...
+	// Cropping the version /v1.42/containers/...
 	re := regexp.MustCompile(`/v\d+\.\d+/`)
 	obj = re.ReplaceAllString(obj, "/")
 
@@ -284,8 +285,8 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		}
 	}
 
+	// If it is exec, we don't need to execute CheckDatabaseAndMakeMapa
 	if strings.HasPrefix(obj, execAtContainerAPI) {
-
 		key, found := req.RequestHeaders[headerWithToken]
 		if !found {
 			instruction := fmt.Sprintf("Access denied by AuthPLugin. Authheader is Empty. Follow instruction - %s", manual)
@@ -297,15 +298,12 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 			return authorization.Response{Allow: true}
 		}
 
-		// can't exec at the container what doesn't exist
-		keyFromMapa, found := database[containerID]
+		// Can't exec into the container that doesn't exist
+		keyHashFromMapa, found := database[containerID]
 		if found {
-			if keyFromMapa == keyHash {
+			if allow := AllowMakeTheAction(keyHashFromMapa, keyHash); allow {
 				return authorization.Response{Allow: true}
 			} else {
-				if yes := IsItAdmin(keyHash); yes {
-					return authorization.Response{Allow: true}
-				}
 				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. You can't exec other people's containers"}
 			}
 		}

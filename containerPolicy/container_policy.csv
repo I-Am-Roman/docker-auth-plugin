@@ -7,5 +7,4 @@ PidMode,,string,ExpectToSee
 SecurityOpt,null,slice,ExpectToSee
 Devices,,slice,ExpectToSee
 CgroupParent,,string,ExpectToSee
-SecurityOpt,null,slice,ExpectToSee
 DeviceCgroupRules,null,slice,ExpectToSee
