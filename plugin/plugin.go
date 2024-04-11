@@ -212,6 +212,10 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	}
 
 	for _, j := range ForbiddenToDo {
+		keyHash := CalculateHash(req.RequestHeaders[headerWithToken])
+		if yes := IsItAdmin(keyHash); yes {
+			return authorization.Response{Allow: true}
+		}
 		if strings.HasPrefix(obj, j) {
 			return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin: " + obj}
 		}
