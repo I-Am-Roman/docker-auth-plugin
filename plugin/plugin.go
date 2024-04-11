@@ -84,7 +84,6 @@ func DefineContainerID(obj string) string {
 	containerID := partsOfApi[2]
 	isitNameOfContainer := false
 
-	// Is it a name of container?
 	for id := range IDAndNameMapping {
 		if containerID == IDAndNameMapping[id] {
 			isitNameOfContainer = true
@@ -120,7 +119,6 @@ func DefineContainerID(obj string) string {
 // We MUST to know the name of container
 // We also solve the problem hanging in air containers
 func CheckDatabaseAndMakeMapa() error {
-	log.Println("I'm here")
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -170,11 +168,7 @@ func CheckDatabaseAndMakeMapa() error {
 			delete(IDAndHashKeyMapping, oldId)
 		}
 	}
-	//------------------------------------------
-	// DEBUG
-	log.Println("NameAndIdMapping:", IDAndNameMapping)
-	log.Println("IDAndHashKeyMapping:", IDAndHashKeyMapping)
-	//------------------------------------------
+
 	return nil
 }
 
@@ -193,13 +187,11 @@ func CalculateHash(key string) string {
 
 // AuthZReq authorizes the docker client command.
 func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorization.Response {
-	// Parse request and the request body
 
+	// Parse request and the request body
 	reqURI, _ := url.QueryUnescape(req.RequestURI)
 	reqURL, _ := url.ParseRequestURI(reqURI)
 
-	log.Println("[1]req:", req)
-	log.Println("[1]reqURL:", reqURL)
 	// If we'll get empty request from docker
 	if reqURL == nil {
 		log.Fatal("Get empty request from docker")
@@ -207,21 +199,11 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 	}
 
 	obj := reqURL.String()
-	act := req.RequestMethod
 	reqBody, _ := url.QueryUnescape(string(req.RequestBody))
 
 	// Cropping the version /v1.42/containers/...
 	re := regexp.MustCompile(`/v\d+\.\d+/`)
 	obj = re.ReplaceAllString(obj, "/")
-
-	//------------------------------------------
-	// DEBUG
-	log.Println("------------------------------------------------------------------")
-	log.Println("Headers:", req.RequestHeaders)
-	log.Println("Method:", act)
-	log.Println("Api:", obj)
-	log.Println("Body:", reqBody)
-	//------------------------------------------
 
 	for _, j := range AllowToDo {
 		if obj == j {
@@ -248,17 +230,8 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 		// Allow to create without AuthHeader, because we don't have the container ID at this step
 		yes, failedPolicy := containerpolicy.ComplyTheContainerPolicy(reqBody)
 		if !yes {
-			// if we fall, we get a failed policy
-			//wordRegex := regexp.MustCompile(`^\w+$`)
 			msg := fmt.Sprintf("Container Body does not comply with the container policy: %s", failedPolicy)
 			return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin." + msg}
-
-			//if wordRegex.MatchString(failedPolicy) {
-			//	msg := fmt.Sprintf("Container Body not comply container policy: %s", failedPolicy)
-			//	return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin." + msg}
-			//} else {
-			//	return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin." + failedPolicy}
-			//}
 		}
 	}
 

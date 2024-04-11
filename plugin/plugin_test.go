@@ -17,7 +17,6 @@ type AdmitTestCase struct {
 	result  authorization.Response
 }
 
-// go test -count 100 -coverprofile=/tmp/coverage.out ./...
 func TestAuthZReq(t *testing.T) {
 	authPlugin := &CasbinAuthZPlugin{}
 	testContainerID := "f760a15e19af19f97e52ead30d4cb5f8c906e601bab8cb63ccc071857df44b75"

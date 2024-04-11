@@ -121,7 +121,7 @@ $ systemctl restart docker
 $ journalctl -xe -u container-authz-plugin -f
 ```
 
-### Step-6 Check /.docker/config.json:
+### Step-7 Check /.docker/config.json:
 You may occur with a next problem if you want to work with a container:
 
 ```
@@ -221,6 +221,10 @@ Uninstall the plugin service, where you clone the repo:
 ```bash
 $ make uninstall
 ```
+
+## Testing
+
+For tests docker plugin you can use https://github.com/I-am-Roman/test-system-dockerAuthPlugin/tree/master. I have tried to collect the most common cases. However, it is more preferable to use `go test -count 100 -coverprofile=/tmp/coverage.out ./...`. I will add new cases to these filename_test.go files.
 
 ## Contact
 
