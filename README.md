@@ -1,6 +1,6 @@
 # Docker Authorization Plugin Based on Casbin
 
-[![Go Report Card](https://goreportcard.com/badge/github.com/casbin/casbin-authz-plugin)](https://goreportcard.com/report/github.com/casbin/casbin-authz-plugin) [![Build Status](https://travis-ci.org/casbin/casbin.svg?branch=master)](https://travis-ci.org/casbin/casbin) [![GoDoc](https://godoc.org/github.com/casbin/casbin-authz-plugin?status.svg)](https://godoc.org/github.com/casbin/casbin-authz-plugin)
+[![Go Report Card](https://goreportcard.com/badge/github.com)](https://goreportcard.com/report/github.com) [![Build Status](https://travis-ci.org)](https://travis-ci.org/casbin/casbin) [![GoDoc](https://godoc.org/github.com)](https://godoc.org/github.com)
 
 This plugin controls the access to Docker commands based on authorization policy. Plugin contains:
 
@@ -8,7 +8,7 @@ This plugin controls the access to Docker commands based on authorization policy
    * Admin can exec at any containers
    * Admin can create any containers
    * For admin working authentication, that means admin's containers will be protected
-2. Permission to do:
+2. The permission to do:
    * ``/ping``
    * ``/images/json`` docker images 
    * ``/containers/json?all=1`` docker ps -a
@@ -137,20 +137,14 @@ $ nano setup_dockerAuthToken.sh
 
 Copy at the file next:
 ```bash
-# Путь к директории ~/.docker
 docker_dir="$HOME/.docker"
- 
-# Путь к файлу config.json
 config_file="$docker_dir/config.json"
  
-# Проверка наличия директории ~/.docker, понятный язык
 if [ ! -d "$docker_dir" ]; then
     mkdir -p "$docker_dir"
 fi
  
-# Проверка наличия файла config2.json
 if [ ! -f "$config_file" ]; then
-    # Если файла нет, создаем его с нужным содержимым заголовком
     echo '{
   "HttpHeaders": {
     "AuthHeader": "'$(openssl rand -hex 16)'"
@@ -159,11 +153,9 @@ if [ ! -f "$config_file" ]; then
 echo "Настройки успешно обновлены в $config_file"
  
 else
-    # Если файл есть, проверяем наличие "AuthHeader"
     if grep -q '"AuthHeader":' "$config_file"; then
         echo "AuthHeader уже существует в $config_file"
     else
-    # Если "AuthHeader" отсутствует, добавляем его в самый конец с помощью jq
     authHeader=$(openssl rand -hex 16)
     jq ". + {\"HttpHeaders\": {\"AuthHeader\": \"$authHeader\"}}" "$config_file" > "$config_file.tmp" && mv "$config_file.tmp" "$config_file"
     echo "Настройки успешно обновлены в $config_file"
