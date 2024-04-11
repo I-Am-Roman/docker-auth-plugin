@@ -1,6 +1,7 @@
 # Docker Authorization Plugin Based on Casbin
 
-[![Go Report Card](https://goreportcard.com/badge/github.com)](https://goreportcard.com/report/github.com) [![Build Status](https://travis-ci.org)](https://travis-ci.org/casbin/casbin) [![GoDoc](https://godoc.org/github.com)](https://godoc.org/github.com)
+[![Go Report Card](https://goreportcard.com/badge/github.com)](https://goreportcard.com/report/github.com) [![Build Status](https://travis-ci.org/casbin/casbin.svg?branch=master)](https://travis-ci.org) [![GoDoc](https://godoc.org/github.com/casbin/casbin-authz-plugin?status.svg)](https://godoc.org/github.com)
+
 
 This plugin controls the access to Docker commands based on authorization policy. Plugin contains:
 
