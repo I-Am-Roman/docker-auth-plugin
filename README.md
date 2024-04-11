@@ -67,7 +67,7 @@ $ git clone https://github.com/I-am-Roman/docker-auth-plugin
 $ cd docker-auth-plugin
 ```
 
-### Step-2: Exrcute the project build (prepare our .socket and .service files too)
+### Step-2: Execute the project build (prepare our .socket and .service files too)
 ```bash
 $ make
 go build  -o container-authz-plugin .
@@ -81,7 +81,21 @@ install -m 644 policy/basic_policy.csv /usr/lib/docker/policy
 install -m 644 containerPolicy/container_policy.csv /usr/lib/docker
 ```
 
-### Step-3: Check our service and turn on
+### Step-3: Define the admin token before the start (optional)
+If you want to use bypass for admin, you need to execute:
+```bash
+$ openssl rand -hex 16
+75ea549427986bbea5d2292f7c00f164
+$ echo -n "75ea549427986bbea5d2292f7c00f164" | openssl dgst -sha256
+7c3aa42f54e7848da56244fbf7844ef3687b6d172cf5a289ad0092da46aeb713
+```
+And at `/usr/lib/docker`:
+```bash
+$ nano .env
+ADMIN_TOKEN="7c3aa42f54e7848da56244fbf7844ef3687b6d172cf5a289ad0092da46aeb713"
+```
+
+### Step-4: Check our service and turn on
 ```bash
 $ systemctl status container-authz-plugin
 
@@ -94,7 +108,7 @@ $ systemctl enable container-authz-plugin
 $ systemctl start container-authz-plugin
 ```
 
-### Step-4: Add to the daemon.json "authorization-plugins":["container-authz-plugin"]" 
+### Step-5: Add to the daemon.json "authorization-plugins":["container-authz-plugin"]" 
 ```bash
 $ cd /etc/docker
 $ nano daemon.json
@@ -109,24 +123,24 @@ $ nano daemon.json
 }
 ```
 
-### Step-5: Restart docker for new settings
+### Step-6: Restart docker for new settings
 ```bash
 $ systemctl daemon-reload
 $ systemctl restart docker
 ```
 
-### Step-6 Activate the plugin logs:
+### Step-7 Activate the plugin logs:
 
 ```bash
 $ journalctl -xe -u container-authz-plugin -f
 ```
 
-### Step-7 Check /.docker/config.json:
+### Step-8 Check /.docker/config.json:
 You may occur with a next problem if you want to work with a container:
 
 ```
 $ docker start 4648759b6574
-Error response from daemon: authorization denied by plugin container-authz-plugin: Access denied by AuthPLugin. Authheader is Empty. Follow instruction - https://confluence.o3.ru/
+Error response from daemon: authorization denied by plugin container-authz-plugin: Access denied by AuthPLugin. Authheader is Empty. Follow instruction - https://docs.docker.com/engine/reference/commandline/cli/#custom-http-headers
 Error: failed to start containers: 4648759b6574
 ```
 
@@ -224,7 +238,11 @@ $ make uninstall
 
 ## Testing
 
-For tests docker plugin you can use https://github.com/I-am-Roman/test-system-dockerAuthPlugin/tree/master. I have tried to collect the most common cases. However, it is more preferable to use `go test -count 100 -coverprofile=/tmp/coverage.out ./...`. I will add new cases to these filename_test.go files.
+For tests docker plugin you can use https://github.com/I-am-Roman/test-system-dockerAuthPlugin. I have tried to collect the most common cases. However, it is more preferable to use:
+```bash
+docker-auth-plugin $ go test -count 100 -coverprofile=/tmp/coverage.out ./...
+```
+I will replenish these files with new cases over time
 
 ## Contact
 
