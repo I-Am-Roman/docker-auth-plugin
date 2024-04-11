@@ -22,7 +22,6 @@ var (
 )
 
 func main() {
-	// Parse command line options.
 	flag.Parse()
 	pwd, _ := os.Getwd()
 	log.Println("Current directory:", pwd)
@@ -34,16 +33,15 @@ func main() {
 	}
 	AdminToken = os.Getenv("ADMIN_TOKEN")
 	plugin.DefineAdminToken(AdminToken)
-	// Create Casbin authorization plugin
-	plugin, err := plugin.NewPlugin()
+
+	authPlugin, err := plugin.NewPlugin()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// Start service handler on the local sock
 	u, _ := user.Lookup("root")
 	gid, _ := strconv.Atoi(u.Gid)
-	handler := authorization.NewHandler(plugin)
+	handler := authorization.NewHandler(authPlugin)
 	if err := handler.ServeUnix(pluginSocket, gid); err != nil {
 		log.Fatal(err)
 	}
