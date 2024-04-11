@@ -21,16 +21,16 @@ const (
 	creationContainerAPI   = "/containers/create"
 	actionWithContainerAPI = "/containers/"
 	execAtContainerAPI     = "/exec/"
-	headerWithToken        = "Authheader"
+	headerWithToken        = "AuthHeader"
 	trash                  = "Trash"
-	manual                 = "https://confluence.o3.ru/"
+	manual                 = "https://docs.docker.com/engine/reference/commandline/cli/#custom-http-headers"
 )
 
 var (
-	AdminToken       string
-	database         = make(map[string]string)
-	nameAndIdMapping = make(map[string]string)
-	AllowToDo        = []string{
+	AdminToken          string
+	IDAndHashKeyMapping = make(map[string]string)
+	IDAndNameMapping    = make(map[string]string)
+	AllowToDo           = []string{
 		"/_ping",
 		"/images/json",
 		"/containers/json?all=1",
@@ -38,19 +38,15 @@ var (
 	}
 	ForbiddenToDo = []string{
 		"/commit",
-		"/volumes/create",
 		"/volumes",
 		"/plugins",
 	}
 )
 
-// CasbinAuthZPlugin is the Casbin Authorization Plugin
 type CasbinAuthZPlugin struct {
-	// Casbin enforcer
 	enforcer *casbin.Enforcer
 }
 
-// newPlugin creates a new casbin authorization plugin
 func NewPlugin() (*CasbinAuthZPlugin, error) {
 	plugin := &CasbinAuthZPlugin{}
 
@@ -60,11 +56,10 @@ func NewPlugin() (*CasbinAuthZPlugin, error) {
 	return plugin, err
 }
 
-func DefineAdminToken(Token string) {
-	AdminToken = Token
+func DefineAdminToken(token string) {
+	AdminToken = token
 }
 
-// Bypass for admin
 func IsItAdmin(keyHash string) bool {
 	if keyHash == AdminToken {
 		log.Println("Bypass for admin")
@@ -88,22 +83,24 @@ func DefineContainerID(obj string) string {
 	partsOfApi := strings.Split(obj, "/")
 	containerID := partsOfApi[2]
 	isitNameOfContainer := false
+
 	// Is it a name of container?
-	for id := range nameAndIdMapping {
-		if containerID == nameAndIdMapping[id] {
+	for id := range IDAndNameMapping {
+		if containerID == IDAndNameMapping[id] {
 			isitNameOfContainer = true
 			// Redefining containerID
 			containerID = id
 			break
 		}
 	}
+
 	// If user sent a containerID with less, than 12 symbols, or less, than 64, but not 12
 	if len(containerID) != 64 && len(containerID) != 12 && !isitNameOfContainer {
 		IsItShortId := false
 		if len(containerID) > 12 {
 			containerID = containerID[:12]
 		}
-		for ID := range database {
+		for ID := range IDAndHashKeyMapping {
 			if ID[:len(containerID)] == containerID {
 				containerID = ID
 				IsItShortId = true
@@ -119,9 +116,11 @@ func DefineContainerID(obj string) string {
 	return containerID[:12]
 }
 
-// Since to containers can be accessed by name, we MUST to know a name of container
-// We also solving the problem suspended in the air containers
+// Since containers can be accessed by name,
+// We MUST to know the name of container
+// We also solve the problem hanging in air containers
 func CheckDatabaseAndMakeMapa() error {
+	log.Println("I'm here")
 	ctx := context.Background()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
@@ -129,7 +128,7 @@ func CheckDatabaseAndMakeMapa() error {
 	}
 	defer cli.Close()
 
-	// execute "docker ps -a"
+	// similar to the "docker ps -a"
 	containers, err := cli.ContainerList(ctx, types.ContainerListOptions{All: true})
 	if err != nil {
 		return err
@@ -138,53 +137,56 @@ func CheckDatabaseAndMakeMapa() error {
 	// Create map for a quick check of uniqueness
 	// Get info from docker daemon and confidently speak
 	// this container exist
-	isItIdExist := make(map[string]bool)
+	doesThisIDExist := make(map[string]bool)
 	for _, container := range containers {
 		ID := container.ID[:12]
-		// docker daemon usually return /<nameOfContainer>
-		// that's why we need to TrimLeft a "/""
 		name := container.Names[0]
+
+		// Docker Daemon usually return /<nameOfContainer> that's why we need to TrimLeft a "/"
 		hasSlash := strings.Contains(name, "/")
 		if hasSlash {
 			name = strings.TrimLeft(name, "/")
 		}
-		isItIdExist[ID] = true
-		// Put new ID at nameAndIdMapping, don't forget about old containers
-		if _, exists := nameAndIdMapping[ID]; !exists {
-			nameAndIdMapping[ID] = name
+
+		doesThisIDExist[ID] = true
+		if _, exists := IDAndNameMapping[ID]; !exists {
+			IDAndNameMapping[ID] = name
 		}
 	}
 
-	// Create temporary map for key storage we need to delete from nameAndIdMapping
+	// Create temporary map for key storage we need to delete from IDAndNameMapping
 	keysToDelete := make(map[string]bool)
-	for key := range nameAndIdMapping {
-		if !isItIdExist[key] {
+	for key := range IDAndNameMapping {
+		if !doesThisIDExist[key] {
 			keysToDelete[key] = true
 		}
 	}
 
-	// Delete old container also from database
+	// Delete old container also from IDAndHashKeyMapping
 	for oldId := range keysToDelete {
-		delete(nameAndIdMapping, oldId)
-		_, found := database[oldId]
+		delete(IDAndNameMapping, oldId)
+		_, found := IDAndHashKeyMapping[oldId]
 		if found {
-			delete(database, oldId)
+			delete(IDAndHashKeyMapping, oldId)
 		}
 	}
 	//------------------------------------------
 	// DEBUG
-	log.Println("NameAndIdMapping:", nameAndIdMapping)
-	log.Println("database:", database)
+	log.Println("NameAndIdMapping:", IDAndNameMapping)
+	log.Println("IDAndHashKeyMapping:", IDAndHashKeyMapping)
 	//------------------------------------------
 	return nil
 }
 
-// We don't need to save at database a real value of key
-// Let's save a hash
 func CalculateHash(key string) string {
 	hasher := sha256.New()
-	hasher.Write([]byte(key))
 
+	_, err := hasher.Write([]byte(key))
+	if err != nil {
+		log.Fatalf("Failed to write to hasher: %v", err)
+	}
+
+	// Get the byte representation of the hash and convert it to a string of hexadecimal representation
 	hashKey := hex.EncodeToString(hasher.Sum(nil))
 	return hashKey
 }
@@ -192,12 +194,15 @@ func CalculateHash(key string) string {
 // AuthZReq authorizes the docker client command.
 func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorization.Response {
 	// Parse request and the request body
-	log.Println("------------------------------------------------------------------")
+
 	reqURI, _ := url.QueryUnescape(req.RequestURI)
 	reqURL, _ := url.ParseRequestURI(reqURI)
 
+	log.Println("[1]req:", req)
+	log.Println("[1]reqURL:", reqURL)
 	// If we'll get empty request from docker
 	if reqURL == nil {
+		log.Fatal("Get empty request from docker")
 		return authorization.Response{Allow: true}
 	}
 
@@ -211,6 +216,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 
 	//------------------------------------------
 	// DEBUG
+	log.Println("------------------------------------------------------------------")
 	log.Println("Headers:", req.RequestHeaders)
 	log.Println("Method:", act)
 	log.Println("Api:", obj)
@@ -225,7 +231,7 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 
 	for _, j := range ForbiddenToDo {
 		if strings.HasPrefix(obj, j) {
-			return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin: " + obj}
+			return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin: " + obj}
 		}
 	}
 
@@ -238,24 +244,28 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 				return authorization.Response{Allow: true}
 			}
 		}
-		// Allow create without AuthHeader, because at this step i don't have container ID
-		comply, object := containerpolicy.ComplyTheContainerPolicy(reqBody)
-		if !comply {
+
+		// Allow to create without AuthHeader, because we don't have the container ID at this step
+		yes, failedPolicy := containerpolicy.ComplyTheContainerPolicy(reqBody)
+		if !yes {
 			// if we fall, we get a failed policy
-			wordRegex := regexp.MustCompile(`^\w+$`)
-			if wordRegex.MatchString(object) {
-				msg := fmt.Sprintf("Container Body not comply container policy: %s", object)
-				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin." + msg}
-			} else {
-				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin." + object}
-			}
+			//wordRegex := regexp.MustCompile(`^\w+$`)
+			msg := fmt.Sprintf("Container Body does not comply with the container policy: %s", failedPolicy)
+			return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin." + msg}
+
+			//if wordRegex.MatchString(failedPolicy) {
+			//	msg := fmt.Sprintf("Container Body not comply container policy: %s", failedPolicy)
+			//	return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin." + msg}
+			//} else {
+			//	return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin." + failedPolicy}
+			//}
 		}
 	}
 
 	if strings.HasPrefix(obj, actionWithContainerAPI) {
 		key, found := req.RequestHeaders[headerWithToken]
 		if !found {
-			instruction := fmt.Sprintf("Access denied by AuthPLugin. Authheader is Empty. Follow instruction - %s", manual)
+			instruction := fmt.Sprintf("Access denied by AuthPlugin. AuthHeader is Empty. Follow the instruction - %s", manual)
 			return authorization.Response{Allow: false, Msg: instruction}
 		}
 		keyHash := CalculateHash(key)
@@ -271,43 +281,44 @@ func (plugin *CasbinAuthZPlugin) AuthZReq(req authorization.Request) authorizati
 			return authorization.Response{Allow: true}
 		}
 
-		keyHashFromMapa, found := database[containerID]
+		keyHashFromMapa, found := IDAndHashKeyMapping[containerID]
 		if found {
 			if allow := AllowMakeTheAction(keyHashFromMapa, keyHash); allow {
 				return authorization.Response{Allow: true}
 			} else {
-				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. That's not your container"}
+				return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin. That's not your container"}
 			}
 		} else {
 			log.Println("That's container was created right now:", containerID)
-			database[containerID] = keyHash
+			IDAndHashKeyMapping[containerID] = keyHash
 			return authorization.Response{Allow: true}
 		}
 	}
 
-	// If it is exec, we don't need to execute CheckDatabaseAndMakeMapa
 	if strings.HasPrefix(obj, execAtContainerAPI) {
+
 		key, found := req.RequestHeaders[headerWithToken]
 		if !found {
-			instruction := fmt.Sprintf("Access denied by AuthPLugin. Authheader is Empty. Follow instruction - %s", manual)
+			instruction := fmt.Sprintf("Access denied by AuthPlugin. Authheader is Empty. Follow instruction - %s", manual)
 			return authorization.Response{Allow: false, Msg: instruction}
 		}
+
 		keyHash := CalculateHash(key)
 		containerID := DefineContainerID(obj)
 		if containerID == trash {
 			return authorization.Response{Allow: true}
 		}
 
-		// Can't exec into the container that doesn't exist
-		keyHashFromMapa, found := database[containerID]
+		keyHashFromMapa, found := IDAndHashKeyMapping[containerID]
 		if found {
 			if allow := AllowMakeTheAction(keyHashFromMapa, keyHash); allow {
 				return authorization.Response{Allow: true}
 			} else {
-				return authorization.Response{Allow: false, Msg: "Access denied by AuthPLugin. You can't exec other people's containers"}
+				return authorization.Response{Allow: false, Msg: "Access denied by AuthPlugin. You can't exec other people's containers"}
 			}
 		}
 	}
+
 	return authorization.Response{Allow: true}
 }
 
