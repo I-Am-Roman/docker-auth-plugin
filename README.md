@@ -184,7 +184,7 @@ $ chmod +x setup_dockerAuthToken.sh
 $ ./setup_dockerAuthToken.sh
 ```
 
-My congig.json:
+My config.json:
 ```bash
 $ cat /.docker/config,json
 {
